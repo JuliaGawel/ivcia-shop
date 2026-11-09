@@ -1,0 +1,791 @@
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="google-site-verification" content="m6CCE6WxymFiggOUUG2pNcU3ogpFnC-RnJxO9mFixBI" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/png" href="https://i.imgur.com/PBJi1sW.png">
+<title>Ivcia Shop</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:Arial,sans-serif;background:#f5f5f5;margin:0;color:#222}
+header{background:#1db954;color:white;padding:15px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+header h2{margin:0}
+.header-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button{padding:9px 13px;border:0;border-radius:7px;background:#1db954;color:white;cursor:pointer;margin:3px;font-size:14px}
+button:hover{opacity:.9}
+button:disabled{cursor:not-allowed;opacity:.7}
+.danger{background:#e53935}.gray{background:#777}.blue{background:#1976d2}.orange{background:#ef6c00}
+input{display:block;margin:8px 0;padding:10px;border-radius:8px;border:1px solid #ccc;width:100%;font-size:14px}
+#login,#register{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:white;padding:25px;border-radius:15px;width:330px;max-width:90%;box-shadow:0 5px 25px #0002;z-index:500}
+#register,#shop{display:none}
+#login h2,#register h2{margin-top:0}
+#profile{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+#profile img{width:40px;height:40px;object-fit:cover;border-radius:50%}
+#products{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));padding:10px}
+.card{background:white;padding:15px;margin:10px;border-radius:10px;box-shadow:0 2px 8px #0000000f}
+.card h3{margin-top:0}
+.old-price{text-decoration:line-through;color:#888;margin-right:8px}
+.sale-price{color:red;font-weight:bold;font-size:19px}
+.sold{color:red;font-weight:bold}
+.admin-status{padding:8px;background:#f5f5f5;border-radius:7px;margin:8px 0}
+#adminPanel{display:none;padding:20px;background:white;margin:15px;border-radius:10px;box-shadow:0 2px 8px #0000000f}
+#cart{position:fixed;right:-380px;top:0;width:350px;max-width:95%;height:100%;background:white;padding:15px;transition:.3s;box-shadow:-4px 0 15px #00000026;z-index:1000;overflow-y:auto}
+#cart.open{right:0}
+.cart-item{padding:10px 0;border-bottom:1px solid #ddd}
+.cart-item button{background:#e53935}
+#sum{font-weight:bold}
+#syncStatus{position:fixed;bottom:10px;left:10px;background:white;padding:8px 12px;border-radius:8px;font-size:12px;box-shadow:0 2px 10px #0000001a;z-index:2000}
+.sync-ok{color:#16833b}.sync-error{color:#d32f2f}.sync-warning{color:#b26a00}
+.loading{text-align:center;padding:30px}
+.small{font-size:12px;color:#777}
+.notice{background:#fff8e1;padding:10px;border-radius:8px;font-size:13px;line-height:1.5}
+</style>
+</head>
+<body>
+
+<div id="login">
+<h2>Ivcia Shop</h2>
+<input id="loginName" placeholder="Nazwa" autocomplete="username">
+<input id="loginPass" type="password" placeholder="Hasło" autocomplete="current-password">
+<button onclick="login()">Zaloguj</button>
+<p>Nie masz konta?</p>
+<button onclick="registerShow()">Zarejestruj się</button>
+</div>
+
+<div id="register">
+<h2>Rejestracja</h2>
+<input id="first" placeholder="Imię">
+<input id="last" placeholder="Nazwisko">
+<input id="name" placeholder="Nazwa">
+<input id="pass" type="password" placeholder="Hasło">
+<input id="pass2" type="password" placeholder="Powtórz hasło">
+<input id="photo" placeholder="URL zdjęcia">
+<button onclick="createAccount()">Utwórz konto</button>
+<button class="gray" onclick="loginShow()">Wróć</button>
+</div>
+
+<div id="shop">
+<header>
+<h2>Ivcia Shop</h2>
+<div class="header-right">
+<div id="profile"></div>
+<button onclick="toggleCart()">🛒 <span id="count">0</span></button>
+</div>
+</header>
+
+<div id="products"><div class="loading">Ładowanie produktów...</div></div>
+
+<div id="adminPanel">
+<h2>Panel Administratora</h2>
+<p>Promocje i „Wyprzedane” są synchronizowane z Ivcia D1.</p>
+<p class="small">Produkty są pobierane z listy const products znajdującej się w kodzie.</p>
+<button class="blue" onclick="forceCatalogSync()">🔄 Synchronizuj produkty</button>
+<div id="adminProducts"></div>
+</div>
+
+<div id="cart">
+<h2>Koszyk</h2>
+<div id="items"></div>
+<h3>Razem: <span id="sum">0.00</span> zł</h3>
+<label for="pickup">Data i godzina odbioru:</label>
+<input id="pickup" type="datetime-local">
+<button onclick="mail()">📧 Przygotuj zamówienie e-mail</button>
+<p class="notice">Przed przygotowaniem zamówienia wybierzesz adres e-mail. Otworzy się aplikacja pocztowa z gotową wiadomością. Aby zamówienie dotarło, naciśnij w niej „Wyślij”. Nie wpisuj ani nie wysyłaj kodu BLIK.</p>
+<button class="gray" onclick="toggleCart()">Zamknij</button>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/postreq/dist/postreq.min.js"></script>
+<script>
+/*
+ * Ivcia Shop
+ * mailto otwiera aplikację pocztową, ale nie wysyła wiadomości samodzielnie.
+ * Nie zbieramy kodów BLIK.
+ */
+
+const postreq = new POSTreq.POSTreq();
+window.fetch = postreq.getPolyfill();
+
+let postreqReady = new Promise(resolve => {
+    if (postreq.loaded) {
+        resolve();
+    } else {
+        postreq.onLoad = function() { resolve(); };
+    }
+});
+
+const WORKER_URL = "https://ivcia-shop-api.ivcia-d20.workers.dev";
+const ADMIN_NAME = "Roblox";
+
+const products = [
+    {id:"rzeszowianka-05-niegazowana",name:"Rzeszowianka 0.5l niegazowana",price:3},
+    {id:"rzeszowianka-05-musujaca",name:"Rzeszowianka 0.5l musująca",price:3},
+    {id:"sodastream-20",name:"Rzeszowianka 0.5l gazowana",price:3.00},
+    {id:"rzeszowianka-kiwi",name:"Rzeszowianka Kiwi",price:3.2},
+    {id:"sodastream-05",name:"SodaStream 0.5l",price:2},
+    {id:"sodastream-10",name:"SodaStream 1.0l",price:2.3},
+    {id:"sodastream-11",name:"Pepsi 0.33l",price:4.20},
+    {id:"sodastream-12",name:"Nałęczowianka niegazowana 0.5l",price:3.30},
+    {id:"sodastream-13",name:"Żywiec Zdrój mocny gaz 0.5l",price:4},
+    {id:"sodastream-14",name:"Coca cola Kika 0.2l",price:4.10},
+    {id:"sodastream-15",name:"Pepsi zero Ivcii 0.33l",price:4.20},
+    {id:"sodastream-16",name:"Pepsi Kika 0.25l",price:3.80},
+    {id:"sodastream-17",name:"Pepsi Kika zero Ivcii 0.25l",price:3.80}
+];
+
+let shopSettings = {products:products.map(createLocalProduct)};
+let user = null;
+let cart = [];
+let users = [];
+
+try {
+    users = JSON.parse(localStorage.getItem("users") || "[]");
+    if (!Array.isArray(users)) users = [];
+} catch (error) {
+    users = [];
+}
+
+function setSyncStatus(message,type="") {
+    let target = document.getElementById("syncStatus");
+    if (!target) {
+        target = document.createElement("div");
+        target.id = "syncStatus";
+        document.body.appendChild(target);
+    }
+    target.innerText = message;
+    target.className = type;
+}
+
+function escapeHTML(value) {
+    return String(value)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+}
+
+function createLocalProduct(p) {
+    return {
+        id:String(p.id),
+        name:String(p.name),
+        price:Number(p.price),
+        discount:0,
+        soldOut:false
+    };
+}
+
+function normalizeShopData(data) {
+    if (!data || typeof data !== "object") data = {};
+    if (!Array.isArray(data.products)) data.products = [];
+
+    data.products = data.products
+        .filter(p => p && p.id && p.name)
+        .map(p => {
+            let price = Number(p.price);
+            if (!Number.isFinite(price)) price = 0;
+
+            let discount = Number(p.discount || 0);
+            if (!Number.isFinite(discount)) discount = 0;
+            discount = Math.max(0,Math.min(100,discount));
+
+            return {
+                id:String(p.id),
+                name:String(p.name),
+                price,
+                discount,
+                soldOut:p.soldOut === true
+            };
+        });
+
+    return data;
+}
+
+function productMap(list) {
+    return new Map(list.map(p => [String(p.id),p]));
+}
+
+function productsAreEqual(a,b) {
+    const mapA = productMap(a);
+    const mapB = productMap(b);
+    if (mapA.size !== mapB.size) return false;
+
+    for (const [id,pa] of mapA) {
+        const pb = mapB.get(id);
+        if (!pb) return false;
+        if (String(pa.name) !== String(pb.name)) return false;
+        if (Number(pa.price) !== Number(pb.price)) return false;
+        if (Number(pa.discount || 0) !== Number(pb.discount || 0)) return false;
+        if (Boolean(pa.soldOut) !== Boolean(pb.soldOut)) return false;
+    }
+    return true;
+}
+
+async function getServerSettings() {
+    await postreqReady;
+    const response = await fetch(WORKER_URL + "/settings", {
+        method:"GET",
+        cache:"no-store",
+        headers:{"Accept":"application/json"}
+    });
+    const text = await response.text();
+    console.log("WORKER GET:",response.status,text);
+    if (!response.ok) throw new Error("GET HTTP " + response.status + ": " + text);
+    return normalizeShopData(JSON.parse(text));
+}
+
+async function putServerSettings(data) {
+    await postreqReady;
+    const response = await fetch(WORKER_URL + "/settings", {
+        method:"PUT",
+        headers:{
+            "Content-Type":"application/json",
+            "Accept":"application/json"
+        },
+        body:JSON.stringify(data)
+    });
+    const text = await response.text();
+    console.log("WORKER PUT:",response.status,text);
+    if (!response.ok) throw new Error("PUT HTTP " + response.status + ": " + text);
+    return normalizeShopData(JSON.parse(text));
+}
+
+async function syncProducts() {
+    try {
+        setSyncStatus("⟳ Ivciowanie...","sync-warning");
+        const serverData = await getServerSettings();
+        const serverMap = productMap(serverData.products);
+
+        const finalProducts = products.map(localProduct => {
+            const old = serverMap.get(localProduct.id);
+            if (old) {
+                return {
+                    id:localProduct.id,
+                    name:localProduct.name,
+                    price:Number(localProduct.price),
+                    discount:Number(old.discount || 0),
+                    soldOut:old.soldOut === true
+                };
+            }
+            return createLocalProduct(localProduct);
+        });
+
+        const isAdmin = user && user.name === ADMIN_NAME;
+
+        if (isAdmin) {
+            if (!productsAreEqual(finalProducts,serverData.products)) {
+                setSyncStatus("⟳ Aktualizuję katalog...","sync-warning");
+                shopSettings = await putServerSettings({products:finalProducts});
+            } else {
+                shopSettings = {products:finalProducts};
+            }
+        } else {
+            shopSettings = {products:finalProducts};
+        }
+
+        setSyncStatus("✓ Sklep zaktualizowany","sync-ok");
+        loadProducts();
+        if (user && user.name === ADMIN_NAME) loadAdminPanel();
+        return true;
+    } catch (error) {
+        console.error("SYNC ERROR:",error);
+        shopSettings = {products:products.map(createLocalProduct)};
+        loadProducts();
+        if (user && user.name === ADMIN_NAME) loadAdminPanel();
+        setSyncStatus("⚠ Tryb lokalny","sync-warning");
+        return false;
+    }
+}
+
+async function forceCatalogSync() {
+    if (!user || user.name !== ADMIN_NAME) return;
+    const ok = await syncProducts();
+    alert(ok ? "Katalog został zsynchronizowany!" : "Nie udało się zsynchronizować katalogu.");
+}
+
+async function saveSettings() {
+    try {
+        setSyncStatus("⟳ Zapisywanie...","sync-warning");
+        shopSettings = await putServerSettings(shopSettings);
+        setSyncStatus("✓ Zapisano w D1","sync-ok");
+        return true;
+    } catch (error) {
+        console.error("SAVE ERROR:",error);
+        setSyncStatus("✕ Błąd zapisu","sync-error");
+        alert("Nie udało się zapisać.\n\n" + error.message);
+        return false;
+    }
+}
+
+function registerShow() {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("register").style.display = "block";
+}
+
+function loginShow() {
+    document.getElementById("register").style.display = "none";
+    document.getElementById("login").style.display = "block";
+}
+
+function createAccount() {
+    const name = document.getElementById("name").value.trim();
+    const pass = document.getElementById("pass").value;
+    const pass2 = document.getElementById("pass2").value;
+    const photo = document.getElementById("photo").value.trim();
+
+    if (!name) return alert("Wpisz nazwę konta.");
+    if (!pass) return alert("Wpisz hasło.");
+    if (pass !== pass2) return alert("Hasła nie pasują.");
+    if (users.some(x => x.name === name)) return alert("Konto już istnieje.");
+
+    user = {name,pass,photo,cart:[]};
+    users.push(user);
+    saveUser();
+    cart = [];
+    openShop();
+}
+
+function login() {
+    const name = document.getElementById("loginName").value.trim();
+    const pass = document.getElementById("loginPass").value;
+    const account = users.find(x => x.name === name);
+
+    if (!account) return alert("Konto nie istnieje.");
+    if (account.pass !== pass) return alert("Niepoprawne hasło.");
+
+    user = account;
+    cart = user.cart || [];
+    saveUser();
+    openShop();
+}
+
+async function openShop() {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("register").style.display = "none";
+    document.getElementById("shop").style.display = "block";
+
+    renderProfile();
+    cart = user.cart || [];
+    render();
+
+    shopSettings = {products:products.map(createLocalProduct)};
+    loadProducts();
+    await syncProducts();
+
+    document.getElementById("adminPanel").style.display =
+        user.name === ADMIN_NAME ? "block" : "none";
+
+    if (user.name === ADMIN_NAME) loadAdminPanel();
+}
+
+function renderProfile() {
+    const profile = document.getElementById("profile");
+    const photo = user.photo
+        ? `<img src="${escapeHTML(user.photo)}" alt="Profil">`
+        : "";
+
+    profile.innerHTML = `
+        ${photo}
+        <span>${escapeHTML(user.name)}</span>
+        <button onclick="logout()">Wyloguj</button>
+        <button class="danger" onclick="deleteAccount()">Usuń konto</button>
+    `;
+}
+
+function getProductData(i) {
+    if (shopSettings && Array.isArray(shopSettings.products)) {
+        return shopSettings.products.find(p => String(p.id) === String(products[i].id))
+            || createLocalProduct(products[i]);
+    }
+    return createLocalProduct(products[i]);
+}
+
+function getProductPrice(i) {
+    const local = products[i];
+    const server = getProductData(i);
+    let price = Number(server.price);
+    if (!Number.isFinite(price)) price = Number(local.price);
+
+    let discount = Number(server.discount || 0);
+    if (!Number.isFinite(discount)) discount = 0;
+    discount = Math.max(0,Math.min(100,discount));
+
+    return price - (price * discount / 100);
+}
+
+function isSoldOut(i) {
+    const p = getProductData(i);
+    return p && p.soldOut === true;
+}
+
+function loadProducts() {
+    const box = document.getElementById("products");
+    if (!box) return;
+    box.innerHTML = "";
+
+    if (!products.length) {
+        box.innerHTML = "<div class='empty'>Brak produktów.</div>";
+        return;
+    }
+
+    products.forEach((p,i) => {
+        const data = getProductData(i);
+        const price = getProductPrice(i);
+        const discount = Number(data.discount || 0);
+        const sold = isSoldOut(i);
+
+        let syrup = "";
+        if (p.id === "sodastream-05" || p.id === "sodastream-10") {
+            syrup = `
+                <br>
+                <label>
+                    <input type="checkbox" id="syrup${i}" style="display:inline-block;width:auto">
+                    Syrop +0.20 zł
+                </label>
+            `;
+        }
+
+        const priceHTML = discount > 0
+            ? `<p><span class="old-price">${Number(data.price).toFixed(2)} zł</span>
+               <span class="sale-price">${price.toFixed(2)} zł</span></p>`
+            : `<p>${price.toFixed(2)} zł</p>`;
+
+        const buttonHTML = sold
+            ? `<button disabled style="background:red">Wyprzedane</button>`
+            : `<button onclick="add(${i})">Dodaj do koszyka</button>`;
+
+        box.innerHTML += `
+            <div class="card">
+                <h3>${escapeHTML(p.name)}</h3>
+                ${priceHTML}
+                ${syrup}<br>
+                ${buttonHTML}
+            </div>
+        `;
+    });
+}
+
+function loadAdminPanel() {
+    const box = document.getElementById("adminProducts");
+    if (!box) return;
+    box.innerHTML = "";
+
+    products.forEach((p,i) => {
+        const data = getProductData(i);
+        const discount = Number(data.discount || 0);
+        const sold = data.soldOut === true;
+
+        box.innerHTML += `
+            <div class="card">
+                <h3>${escapeHTML(p.name)}</h3>
+                <div class="small">Cena: ${Number(data.price).toFixed(2)} zł</div>
+                <label>Promocja (%):</label>
+                <input type="number" id="promo${i}" value="${discount}" min="0" max="100" step="0.1">
+                <button onclick="setPromo(${i})">Ustaw promocję</button>
+                <div class="admin-status">Stan: <b class="${sold ? "sold" : ""}">
+                    ${sold ? "Wyprzedany" : "W magazynie"}
+                </b></div>
+                <button onclick="toggleSold(${i})">
+                    ${sold ? "Przywróć do magazynu" : "Oznacz jako wyprzedane"}
+                </button>
+            </div>
+        `;
+    });
+}
+
+async function setPromo(i) {
+    if (!shopSettings.products) return;
+
+    let value = parseFloat(document.getElementById("promo" + i).value);
+    if (Number.isNaN(value)) value = 0;
+    value = Math.max(0,Math.min(100,value));
+
+    const product = getProductData(i);
+    product.discount = value;
+    const index = shopSettings.products.findIndex(p => String(p.id) === String(products[i].id));
+
+    if (index >= 0) shopSettings.products[index] = product;
+    else shopSettings.products.push(product);
+
+    const ok = await saveSettings();
+    if (ok) {
+        loadProducts();
+        loadAdminPanel();
+        render();
+        alert("Promocja została zapisana!");
+    }
+}
+
+async function toggleSold(i) {
+    const product = getProductData(i);
+    product.soldOut = !product.soldOut;
+    const index = shopSettings.products.findIndex(p => String(p.id) === String(products[i].id));
+
+    if (index >= 0) shopSettings.products[index] = product;
+    else shopSettings.products.push(product);
+
+    const ok = await saveSettings();
+    if (ok) {
+        loadProducts();
+        loadAdminPanel();
+        alert("Stan produktu został zapisany!");
+    }
+}
+
+function add(i) {
+    if (isSoldOut(i)) return alert("Produkt jest wyprzedany.");
+
+    let price = getProductPrice(i);
+    let name = products[i].name;
+
+    if (products[i].id === "sodastream-05" || products[i].id === "sodastream-10") {
+        const syrup = document.getElementById("syrup" + i);
+        if (syrup && syrup.checked) {
+            price += 0.20;
+            name += " + syrop";
+        }
+    }
+
+    cart.push({name,price});
+    user.cart = cart;
+    saveUser();
+    render();
+    alert("Dodano do koszyka.");
+}
+
+function saveUser() {
+    if (!user) return;
+
+    const index = users.findIndex(x => x.name === user.name);
+    if (index >= 0) users[index] = user;
+    else users.push(user);
+
+    localStorage.setItem("users",JSON.stringify(users));
+    localStorage.setItem("user",JSON.stringify(user));
+}
+
+function render() {
+    const items = document.getElementById("items");
+    if (!items) return;
+    items.innerHTML = "";
+    let total = 0;
+
+    cart.forEach((item,i) => {
+        const price = Number(item.price);
+        if (Number.isFinite(price)) total += price;
+
+        items.innerHTML += `
+            <div class="cart-item">
+                <b>${escapeHTML(item.name)}</b><br>
+                ${price.toFixed(2)} zł
+                <button onclick="removeCart(${i})">Usuń</button>
+            </div>
+        `;
+    });
+
+    document.getElementById("sum").innerText = total.toFixed(2);
+    document.getElementById("count").innerText = cart.length;
+}
+
+function removeCart(i) {
+    cart.splice(i,1);
+    user.cart = cart;
+    saveUser();
+    render();
+}
+
+function toggleCart() {
+    document.getElementById("cart").classList.toggle("open");
+}
+
+function logout() {
+    localStorage.removeItem("user");
+    user = null;
+    cart = [];
+    document.getElementById("shop").style.display = "none";
+    document.getElementById("adminPanel").style.display = "none";
+    document.getElementById("login").style.display = "block";
+    setSyncStatus("Wylogowano");
+}
+
+function deleteAccount() {
+    if (!user) return;
+    const password = prompt("Podaj hasło:");
+    if (password !== user.pass) return alert("Niepoprawne hasło.");
+
+    users = users.filter(x => x.name !== user.name);
+    localStorage.setItem("users",JSON.stringify(users));
+    localStorage.removeItem("user");
+    user = null;
+    cart = [];
+    location.reload();
+}
+
+/*
+=====================================================
+ ZAMÓWIENIE E-MAIL — WYBÓR ODBIORCY
+=====================================================
+*/
+
+function mail() {
+    if (!user) {
+        alert("Najpierw zaloguj się na swoje konto.");
+        return;
+    }
+
+    if (!cart.length) {
+        alert("Koszyk jest pusty.");
+        return;
+    }
+
+    const recipientChoice = prompt(
+        "Ivcia Shop — wybierz adres odbiorcy:\n\n" +
+        "1 — Gmail: kikaksaw@gmail.com\n" +
+        "2 — Outlook: ivcia1122@outlook.com\n\n" +
+        "Wpisz 1 lub 2:"
+    );
+
+    if (recipientChoice === null) return;
+
+    let recipient;
+
+    if (recipientChoice.trim() === "1") {
+        recipient = "Kikaksaw@gmail.com";
+    } else if (recipientChoice.trim() === "2") {
+        recipient = "Ivcia1122@outlook.com";
+    } else {
+        alert("Nieprawidłowy wybór. Wpisz 1 lub 2.");
+        return;
+    }
+
+    const paymentInput = prompt(
+        "Wybierz formę płatności:\n\n" +
+        "Gotówka\nBLIK\nIvcia Pay\n\n" +
+        "Wpisz nazwę wybranej metody:"
+    );
+
+    if (paymentInput === null) return;
+
+    const paymentClean = paymentInput.trim().toLocaleLowerCase("pl-PL");
+    let paymentName;
+
+    if (paymentClean === "gotówka" || paymentClean === "gotowka") {
+        paymentName = "Gotówka";
+    } else if (paymentClean === "blik") {
+        paymentName = "BLIK";
+    } else if (paymentClean === "ivcia pay") {
+        paymentName = "Ivcia Pay";
+    } else {
+        alert("Nieprawidłowa forma płatności. Wybierz: Gotówka, BLIK lub Ivcia Pay.");
+        return;
+    }
+
+    // Nie pytamy o kod BLIK i nie umieszczamy go w wiadomości.
+    const pickupValue = document.getElementById("pickup").value;
+    let pickupText = "Nie wybrano";
+
+    if (pickupValue) {
+        const date = new Date(pickupValue);
+        pickupText = Number.isNaN(date.getTime())
+            ? pickupValue
+            : date.toLocaleString("pl-PL");
+    }
+
+    const total = cart.reduce((sum,item) => {
+        const price = Number(item.price);
+        return sum + (Number.isFinite(price) ? price : 0);
+    },0);
+
+    let body = "Ivcia Shop — nowe zamówienie\n\n";
+    body += "Nazwa klienta: " + user.name + "\n";
+    body += "Termin odbioru: " + pickupText + "\n";
+    body += "Forma płatności: " + paymentName + "\n\n";
+    body += "Produkty:\n";
+
+    cart.forEach((item,index) => {
+        body += (index + 1) + ". " + item.name + " — " +
+            Number(item.price).toFixed(2) + " zł\n";
+    });
+
+    body += "\nRazem: " + total.toFixed(2) + " zł\n";
+    body += "\nWiadomość wygenerowana przez Ivcia Shop.";
+
+    const subject = "Zamówienie Ivcia Shop";
+    const mailtoURL =
+        "mailto:" + recipient +
+        "?subject=" + encodeURIComponent(subject) +
+        "&body=" + encodeURIComponent(body);
+
+    // Koszyk zostaje zachowany, ponieważ strona nie może potwierdzić wysłania.
+    try {
+        window.location.href = mailtoURL;
+        alert(
+            "Przygotowano wiadomość do:\n" + recipient +
+            "\n\nSprawdź aplikację pocztową i naciśnij w niej „Wyślij”.\n\n" +
+            "Koszyk pozostaje zachowany."
+        );
+    } catch (error) {
+        console.error("Błąd otwierania poczty:",error);
+        alert("Nie udało się otworzyć aplikacji pocztowej. Sprawdź ustawienia poczty na urządzeniu.");
+    }
+}
+
+/*
+=====================================================
+ AUTO SYNCHRONIZACJA
+=====================================================
+*/
+
+setInterval(async function() {
+    if (!user) return;
+    if (document.getElementById("shop").style.display !== "block") return;
+    await syncProducts();
+},5000);
+
+/*
+=====================================================
+ START
+=====================================================
+*/
+
+window.addEventListener("load",async function() {
+    try {
+        await postreqReady;
+    } catch (error) {
+        console.error("POSTreq:",error);
+    }
+
+    const saved = localStorage.getItem("user");
+
+    if (saved) {
+        try {
+            const savedUser = JSON.parse(saved);
+
+            if (savedUser && savedUser.name) {
+                const existing = users.find(x => x.name === savedUser.name);
+
+                if (existing) {
+                    user = existing;
+                } else {
+                    user = savedUser;
+                    users.push(user);
+                    localStorage.setItem("users",JSON.stringify(users));
+                }
+
+                cart = user.cart || [];
+                await openShop();
+                return;
+            }
+        } catch (error) {
+            console.error("START ERROR:",error);
+        }
+    }
+
+    document.getElementById("login").style.display = "block";
+    setSyncStatus("Gotowe");
+});
+</script>
+</body>
+</html>
